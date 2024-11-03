@@ -2,16 +2,6 @@ use std::fs::Metadata;
 use std::io::Error;
 
 
-fn get_type(path: &String) -> () {
-    let metadata = std::fs::metadata(&path).unwrap();
-    let is_dir = metadata.is_dir();
-    let is_file = metadata.is_file();
-    println!("{:?}", metadata);
-    println!("Is directory: {:?}", is_dir);
-    println!("Is file: {:?}", is_file);
-}
-
-
 struct Config {
     args: Vec<String>
 }
@@ -29,12 +19,77 @@ impl App {
     }
 
     pub fn run(&self) -> Result<(), Error> {
-        let current_dir = String::from("./");
-        let paths = Self::read_files_with_hidden(&current_dir)?;
-        for path in paths {
-            println!("Path: {}", path)
-        }
+        let paths: Vec<String> = self.collect_paths()?;
+        Self::write_output(paths);
         Ok(())
+    }
+
+    fn collect_paths(&self, ) -> Result<Vec<String>, Error> {
+        let current_dir = String::from("./");
+        let mut paths: Vec<String> = Vec::new();
+
+        if self.config.args.contains(&String::from("-a"))
+            && self.config.args.len() == 2
+        {
+            return Ok(Self::read_everything(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-d"))
+            && self.config.args.len() == 2
+        {
+            return Ok(Self::read_directories(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-f"))
+            && self.config.args.len() == 2
+        {
+            return Ok(Self::read_files(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-h"))
+            && self.config.args.len() == 2
+        {
+            return  Ok(Self::read_hidden(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-d"))
+            && self.config.args.contains(&String::from("-h"))
+            && self.config.args.len() == 3
+        {
+            return Ok(Self::read_hidden_directories(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-d"))
+            && self.config.args.contains(&String::from("--with-hidden"))
+            && self.config.args.len() == 3
+        {
+            return Ok(Self::read_directories_with_hidden(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-f"))
+            && self.config.args.contains(&String::from("--with-hidden"))
+            && self.config.args.len() == 3
+        {
+            return Ok(Self::read_files_with_hidden(&current_dir)?)
+        }
+
+        if self.config.args.contains(&String::from("-f"))
+            && self.config.args.contains(&String::from("-h"))
+            && self.config.args.len() == 3
+        {
+            return Ok(Self::read_hidden_files(&current_dir)?)
+        }
+
+        paths.append(&mut Self::read_directories(&current_dir)?);
+        paths.append(&mut Self::read_files(&current_dir)?);
+
+        Ok(paths)
+    }
+
+    fn write_output(paths: Vec<String>) -> () {
+        for path in paths {
+            println!("{path}")
+        }
     }
 
     fn read_everything(path: &String) -> Result<Vec<String>, Error> {
@@ -51,14 +106,14 @@ impl App {
         Ok(results)
     }
 
-    fn read_directories_with_hidden(path: &String) -> Result<Vec<String>, Error> {
+    fn read_all_directories(path: &String) -> Result<Vec<String>, Error> {
         let mut directories: Vec<String> = Vec::new();
         let paths = Self::read_everything(path)?;
         for path in paths {
             let metadata = Self::read_metadata(&path)?;
+            let clean_name: String = String::from(&path[2..]);
             if metadata.is_dir() {
-                println!("{:?}", metadata.file_type());
-                directories.push(path)
+                directories.push(clean_name);
             }
         }
 
@@ -66,26 +121,33 @@ impl App {
     }
 
     fn read_directories(path: &String) -> Result<Vec<String>, Error> {
-        let mut directories: Vec<String> = Vec::new();
-        let paths = Self::read_everything(path)?;
-        for path in paths {
-            let metadata = Self::read_metadata(&path)?;
-            let clean_name: String = String::from(&path[2..]);
-            if metadata.is_dir() && !clean_name.starts_with(".") {
-                directories.push(path);
-            }
-        }
+        let paths = Self::read_all_directories(path)?;
 
-        Ok(directories)
+        Ok(
+            paths.into_iter()
+                .filter(|path| !path.starts_with("."))
+                .map(|path| format!("{}/{}{}", "\x1b[38;5;25m", path, "\x1b[0m"))
+                .collect()
+        )
     }
 
-    fn read_files_with_hidden(path: &String) -> Result<Vec<String>, Error> {
+    fn read_directories_with_hidden(path: &String) -> Result<Vec<String>, Error> {
+        let paths = Self::read_all_directories(path)?;
+        Ok(
+            paths.into_iter()
+                .map(|path| format!("{}/{}{}", "\x1b[38;5;25m", path, "\x1b[0m"))
+                .collect()
+        )
+    }
+
+    fn read_all_files(path: &String) -> Result<Vec<String>, Error> {
         let mut files: Vec<String> = Vec::new();
         let paths = Self::read_everything(path)?;
         for path in paths {
             let metadata = Self::read_metadata(&path)?;
-            if metadata.is_file(){
-                files.push(path);
+            let clean_name: String = String::from(&path[2..]);
+            if metadata.is_file() {
+                files.push(clean_name);
             }
         }
 
@@ -93,17 +155,22 @@ impl App {
     }
 
     fn read_files(path: &String) -> Result<Vec<String>, Error> {
-        let mut files: Vec<String> = Vec::new();
-        let paths = Self::read_everything(path)?;
-        for path in paths {
-            let metadata = Self::read_metadata(&path)?;
-            let clean_name: String = String::from(&path[2..]);
-            if metadata.is_file() && !clean_name.starts_with(".") {
-                files.push(path);
-            }
-        }
+        let paths = Self::read_all_files(path)?;
+        Ok(
+            paths.into_iter()
+                .filter(|path| !path.starts_with("."))
+                .map(|path| format!("{}{}{}", "\x1b[38;5;210m", path, "\x1b[0m"))
+                .collect()
+        )
+    }
 
-        Ok(files)
+    fn read_files_with_hidden(path: &String) -> Result<Vec<String>, Error> {
+        let paths = Self::read_all_files(path)?;
+        Ok(
+            paths.into_iter()
+                .map(|path| format!("{}{}{}", "\x1b[38;5;210m", path, "\x1b[0m"))
+                .collect()
+        )
     }
 
     fn read_hidden(path: &String) -> Result<Vec<String>, Error> {
@@ -161,27 +228,32 @@ impl Config {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn directories() {
         let path: String = String::from("./");
-        let expected: Vec<String> = vec!(String::from("./src"), String::from("./target"));
-        let result: Vec<String> = App::read_directories(&path).unwrap();
+        let mut expected: Vec<String> = vec!(String::from("./src"), String::from("./target"));
+        let mut result: Vec<String> = App::read_directories(&path).unwrap();
+        expected.sort();
+        result.sort();
         assert_eq!(expected, result)
     }
 
     #[test]
     fn directories_with_hidden() {
         let path: String = String::from("./");
-        let expected: Vec<String> = vec!(
+        let mut expected: Vec<String> = vec!(
             String::from("./.git"),
             String::from("./.idea"),
             String::from("./src"),
             String::from("./target")
         );
-        let result: Vec<String> = App::read_directories_with_hidden(&path).unwrap();
+        let mut result: Vec<String> = App::read_directories_with_hidden(&path).unwrap();
+        expected.sort();
+        result.sort();
         assert_eq!(expected, result)
     }
 
@@ -196,43 +268,51 @@ mod test {
     #[test]
     fn files() {
         let path: String = String::from("./");
-        let expected: Vec<String> = vec!(String::from("./Cargo.lock"), String::from("./Cargo.toml"));
-        let result: Vec<String> = App::read_files(&path).unwrap();
+        let mut expected: Vec<String> = vec!(String::from("./Cargo.lock"), String::from("./Cargo.toml"));
+        let mut result: Vec<String> = App::read_files(&path).unwrap();
+        expected.sort();
+        result.sort();
         assert_eq!(expected, result)
     }
 
     #[test]
     fn files_with_hidden() {
         let path: String = String::from("./");
-        let expected: Vec<String> = vec!(
+        let mut expected: Vec<String> = vec!(
             String::from("./.gitignore"),
             String::from("./Cargo.lock"),
             String::from("./Cargo.toml")
         );
-        let result: Vec<String> = App::read_files_with_hidden(&path).unwrap();
+        let mut result: Vec<String> = App::read_files_with_hidden(&path).unwrap();
+        expected.sort();
+        result.sort();
         assert_eq!(expected, result)
     }
 
     #[test]
     fn everything_hidden() {
         let path: String = String::from("./");
-        let expected: Vec<String> = vec!(
+        let mut expected: Vec<String> = vec!(
             String::from("./.git"),
             String::from("./.gitignore"),
             String::from("./.idea")
         );
-        let result: Vec<String> = App::read_hidden(&path).unwrap();
+        let mut result: Vec<String> = App::read_hidden(&path).unwrap();
+        expected.sort();
+        result.sort();
         assert_eq!(expected, result)
     }
 
     #[test]
     fn hidden_directories() {
         let path: String = String::from("./");
-        let expected: Vec<String> = vec!(
+        let mut expected: Vec<String> = vec!(
             String::from("./.git"),
             String::from("./.idea")
         );
-        let result: Vec<String> = App::read_hidden_directories(&path).unwrap();
+        let mut result: Vec<String> = App::read_hidden_directories(&path).unwrap();
+        expected.sort();
+        result.sort();
         assert_eq!(expected, result)
     }
 
